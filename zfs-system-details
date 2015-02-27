@@ -1,0 +1,160 @@
+#!/bin/bash
+#emacs: -*- mode: shell-script; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: t -*- 
+#ex: set sts=4 ts=4 sw=4 noet:
+#
+#
+# COPYRIGHT: Yaroslav Halchenko 2015
+#
+# LICENSE: MIT
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy
+#  of this software and associated documentation files (the "Software"), to deal
+#  in the Software without restriction, including without limitation the rights
+#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#  copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in
+#  all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+#  THE SOFTWARE.
+#
+
+set -eu
+
+host=${1:-smaug.dartmouth.edu}
+dn=zfs_system_details_$(date +"20%y%m%d") # _%H%M%S")
+d=/tmp/$dn
+mkdir -p $d
+
+
+function collect_logs() {
+	cp /var/log/kern.log $d/
+        cat /proc/spl/kstat/zfs/arcstats > $d/arcstat
+        cat /proc/spl/kmem/slab > $d/slab
+}
+
+function info () {
+	echo "I: $@"
+}
+
+function warn () {
+	echo "W: $@"
+}
+
+function section() {
+	echo -e "\n## $@:"
+}
+
+function collect_system_info() {
+	info=$d/system-info.txt
+	echo "# Information about the system" > $info
+
+	uname -a >> $info
+	
+	section free >> $info
+	free >> $info
+	
+	section ZFS modules >> $info
+	for m in  zfs spl; do
+		echo "Module: $m" >> $info
+		/sbin/modinfo $m | grep -v '^parm' >> $info
+		echo "" >> $info
+	done
+
+	section "/etc/modprobe.d/zfs.conf" >> $info
+	cat /etc/modprobe.d/zfs.conf >> $info
+
+	section "Active module parameters" >> $info
+	{ for param in /sys/module/{spl,zfs}/parameters/*; do printf "%-50s" `basename $param`; cat $param; done } >> $info
+	# Lame way:
+	# grep . /sys/module/zfs/parameters/* >> $info
+
+	if which dpkg > /dev/null; then
+		section "ZFS packages" >> $info
+		dpkg -l | grep '^ii.*zfs' >> $info
+	fi
+
+	if `which dmidecode >/dev/null`; then
+		section "memory hardware details (dmidecode --type memory)" >> $info
+		dmidecode  --type memory >> $info
+	else
+		warn "Install dmidecode to report details about memory modules"
+	fi
+
+	section cpuinfo >> $info
+	cat /proc/cpuinfo >> $info
+}
+
+function collect_data_info() {
+	info=$d/data-info.txt
+	
+	echo "# Information about data (pool, datasets/partitions)" > $info
+
+	section "zpool list -v" >> $info
+	zpool list -v >> $info
+	
+	section "zfs list" >> $info
+	zfs list >> $info
+	
+	section "zpool get all" >> $info
+	{ timeout --kill-after 6 3 zpool get all 2>&1 || echo "TIMEDOUT(KILLED)" >> $info; } >> $info
+
+	# zfs get all found to hang in my case, so use time out here and above
+	section "zfs get all" >> $info
+	{ timeout --kill-after 6 3 zfs get all 2>&1 || echo "TIMEDOUT(KILLED)" >> $info; } >> $info
+	
+}
+
+function collect_traces() {
+	# produce traces if not present yet
+	/bin/ls -l /proc/?/task/*/stack | grep -q || { echo t > /proc/sysrq-trigger ; }	
+	{
+	cd /proc
+	/bin/ls -d [1-9]* | sort -n \
+	| while read pid; do
+	  echo "## $pid:"
+	  cat /proc/$pid/cmdline 2>/dev/null
+	  echo
+	  for task in /proc/$pid/task/*
+	  do
+	     cat $task/stack 2>/dev/null
+	  done
+	done
+	} > $d/stacktraces.log
+}
+
+function prep_for_online {
+	echo "Options Indexes" >> $d/.htaccess
+	chmod a+rX -R $d
+}
+
+R_USER=
+R_HOST=
+R_PATH=
+R_WWW=
+R_WWW_PATH=
+[ ! -e $HOME/.zfs-system-details ] || . $HOME/.zfs-system-details
+
+function upload_online {
+    info "Uploading online"
+	rsync -a $d -e ssh $R_USER@$R_HOST:$R_PATH
+	info "$R_WWW/$R_WWW_PATH/$dn"
+}
+
+info "collecting information under $d"
+
+collect_logs
+collect_system_info
+collect_data_info
+
+prep_for_online
+
+[ -z "$R_HOST" ] || upload_online
+
