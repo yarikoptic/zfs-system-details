@@ -96,6 +96,9 @@ function collect_data_info() {
 	info=$d/data-info.txt
 	
 	echo "# Information about data (pool, datasets/partitions)" > $info
+	
+    section "zpool status" >> $info
+	zpool status -v >> $info
 
 	section "zpool list -v" >> $info
 	zpool list -v >> $info
