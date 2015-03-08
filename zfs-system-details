@@ -117,7 +117,7 @@ function collect_data_info() {
 
 function collect_traces() {
 	# produce traces if not present yet
-	/bin/ls -l /proc/?/task/*/stack | grep -q || { echo t > /proc/sysrq-trigger ; }	
+	/bin/ls -l /proc/?/task/*/stack | grep -q . || { echo t > /proc/sysrq-trigger ; }	
 	{
 	cd /proc
 	/bin/ls -d [1-9]* | sort -n \
