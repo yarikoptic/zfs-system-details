@@ -156,6 +156,7 @@ info "collecting information under $d"
 collect_logs
 collect_system_info
 collect_data_info
+collect_traces
 
 prep_for_online
 
