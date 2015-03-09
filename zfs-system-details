@@ -1,5 +1,5 @@
 #!/bin/bash
-#emacs: -*- mode: shell-script; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: t -*- 
+#emacs: -*- mode: shell-script; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: t -*-
 #ex: set sts=4 ts=4 sw=4 noet:
 #
 #
@@ -36,8 +36,9 @@ mkdir -p $d
 
 function collect_logs() {
 	cp /var/log/kern.log $d/
-        cat /proc/spl/kstat/zfs/arcstats > $d/arcstat
-        cat /proc/spl/kmem/slab > $d/slab
+	cat /proc/spl/kstat/zfs/arcstats > $d/arcstat
+	cat /proc/spl/kmem/slab > $d/slab
+	cat /proc/slabinfo > $d/slabinfo
 }
 
 function info () {
@@ -57,10 +58,10 @@ function collect_system_info() {
 	echo "# Information about the system" > $info
 
 	uname -a >> $info
-	
+
 	section free >> $info
 	free >> $info
-	
+
 	section ZFS modules >> $info
 	for m in  zfs spl; do
 		echo "Module: $m" >> $info
@@ -94,30 +95,30 @@ function collect_system_info() {
 
 function collect_data_info() {
 	info=$d/data-info.txt
-	
+
 	echo "# Information about data (pool, datasets/partitions)" > $info
-	
-    section "zpool status" >> $info
+
+	section "zpool status" >> $info
 	zpool status -v >> $info
 
 	section "zpool list -v" >> $info
 	zpool list -v >> $info
-	
+
 	section "zfs list" >> $info
 	zfs list >> $info
-	
+
 	section "zpool get all" >> $info
 	{ timeout --kill-after 6 3 zpool get all 2>&1 || echo "TIMEDOUT(KILLED)" >> $info; } >> $info
 
 	# zfs get all found to hang in my case, so use time out here and above
 	section "zfs get all" >> $info
 	{ timeout --kill-after 6 3 zfs get all 2>&1 || echo "TIMEDOUT(KILLED)" >> $info; } >> $info
-	
+
 }
 
 function collect_traces() {
 	# produce traces if not present yet
-	/bin/ls -l /proc/?/task/*/stack | grep -q . || { echo t > /proc/sysrq-trigger ; }	
+	/bin/ls -l /proc/?/task/*/stack | grep -q . || { echo t > /proc/sysrq-trigger ; }
 	{
 	cd /proc
 	/bin/ls -d [1-9]* | sort -n \
@@ -127,7 +128,7 @@ function collect_traces() {
 	  echo
 	  for task in /proc/$pid/task/*
 	  do
-	     cat $task/stack 2>/dev/null
+		cat $task/stack 2>/dev/null
 	  done
 	done
 	} > $d/stacktraces.log
@@ -146,7 +147,7 @@ R_WWW_PATH=
 [ ! -e $HOME/.zfs-system-details ] || . $HOME/.zfs-system-details
 
 function upload_online {
-    info "Uploading online"
+	info "Uploading online"
 	rsync -a $d -e ssh $R_USER@$R_HOST:$R_PATH
 	info "$R_WWW/$R_WWW_PATH/$dn"
 }
@@ -161,4 +162,3 @@ collect_traces
 prep_for_online
 
 [ -z "$R_HOST" ] || upload_online
-
