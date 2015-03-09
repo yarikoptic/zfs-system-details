@@ -124,14 +124,14 @@ function collect_traces() {
 	/bin/ls -d [1-9]* | sort -n \
 	| while read pid; do
 	  echo "## $pid:"
-	  cat /proc/$pid/cmdline 2>/dev/null
+	  cat /proc/$pid/cmdline 2>/dev/null || :
 	  echo
 	  for task in /proc/$pid/task/*
 	  do
-		cat $task/stack 2>/dev/null
+		cat $task/stack 2>/dev/null || :
 	  done
 	done
-	} > $d/stacktraces.log
+	} > $d/stacktraces.txt
 }
 
 function prep_for_online {
