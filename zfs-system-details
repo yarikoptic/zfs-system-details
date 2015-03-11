@@ -29,9 +29,21 @@
 set -eu
 
 host=${1:-smaug.dartmouth.edu}
-dn=zfs_system_details_$(date +"20%y%m%d") # _%H%M%S")
-d=/tmp/$dn
-mkdir -p $d
+
+count=
+{ while true; do
+	  # I know this is "insecure" but want to have clean/deterministic name
+	  # and avoid any collision.  And since mkdir is very shortly after the
+	  # check I do not expect that some race would manage to screw me up ;)
+	  dn=zfs_system_details_$(date +"20%y%m%d")${count:+-}${count} # _%H%M%S")
+	  d=/tmp/$dn
+	  if [ ! -e $d ]; then
+		  mkdir -p $d
+		  break
+	  fi
+	  count=$((${count:-1}+1))
+  done;
+}
 
 
 
