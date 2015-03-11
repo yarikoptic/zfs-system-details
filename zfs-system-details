@@ -34,12 +34,6 @@ d=/tmp/$dn
 mkdir -p $d
 
 
-function collect_logs() {
-	cp /var/log/kern.log $d/
-	cat /proc/spl/kstat/zfs/arcstats > $d/arcstat
-	cat /proc/spl/kmem/slab > $d/slab
-	cat /proc/slabinfo > $d/slabinfo
-}
 
 function info () {
 	echo "I: $@"
@@ -51,6 +45,32 @@ function warn () {
 
 function section() {
 	echo -e "\n## $@:"
+}
+
+function warn_pkg() {
+	warn "Install ${2:-$1} pkg. No $1 output is provided"
+}
+
+function log_cmd() {
+	cmd=$1
+	pkg=${2:-$1}
+	eval "$cmd > $d/$cmd" || warn_pkg $cmd $pkg
+}
+
+function log_cat() {
+	f=$1
+	out=${2:-$(basename $f)}
+	cat $f > $d/$out || warn "Can't cat $f. Not $out output is provided"
+	}
+
+function collect_logs() {
+	cp /var/log/kern.log $d/
+	log_cat /proc/spl/kstat/zfs/arcstats
+	log_cat /proc/spl/kmem/slab
+	log_cat /proc/slabinfo
+	log_cmd lspci pciutils
+	log_cmd lscpu util-linux
+	log_cmd dmidecode
 }
 
 function collect_system_info() {
@@ -65,21 +85,23 @@ function collect_system_info() {
 	section ZFS modules >> $info
 	for m in  zfs spl; do
 		echo "Module: $m" >> $info
-		/sbin/modinfo $m | grep -v '^parm' >> $info
+		/sbin/modinfo $m | grep -v '^parm' >> $info || echo "no module $m loaded" >> $info
 		echo "" >> $info
 	done
 
 	section "/etc/modprobe.d/zfs.conf" >> $info
-	cat /etc/modprobe.d/zfs.conf >> $info
+	cat /etc/modprobe.d/zfs.conf >> $info || echo "no file zfs.conf" >> $info
 
 	section "Active module parameters" >> $info
-	{ for param in /sys/module/{spl,zfs}/parameters/*; do printf "%-50s" `basename $param`; cat $param; done } >> $info
+	{ for param in /sys/module/{spl,zfs}/parameters/*; do
+		  printf "%-50s" `basename $param`; cat $param || echo "Can't cat $param"; done;
+	} >> $info
 	# Lame way:
 	# grep . /sys/module/zfs/parameters/* >> $info
 
 	if which dpkg > /dev/null; then
 		section "ZFS packages" >> $info
-		dpkg -l | grep '^ii.*zfs' >> $info
+		{ dpkg -l | grep '^ii.*zfs' || echo "no zfs pkgs"; } >> $info
 	fi
 
 	if `which dmidecode >/dev/null`; then
@@ -98,6 +120,11 @@ function collect_data_info() {
 
 	echo "# Information about data (pool, datasets/partitions)" > $info
 
+	if ! which zpool >/dev/null; then
+		echo "no zpool cmd available - skipped" >> $info
+		warn "no zpool cmd"
+		return
+	fi
 	section "zpool status" >> $info
 	zpool status -v >> $info
 
